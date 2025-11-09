@@ -57,13 +57,13 @@ def process_and_save_oi_data(symbol, data):
         change_in_put_oi = total_put_oi - last_oi_data.put_oi
 
     oi_interpretation = ""
-    if change_in_ltp > 0 and change_in_call_oi < 0 and change_in_put_oi > 0:
+    if change_in_ltp > 0 and change_in_call_oi > 0:
         oi_interpretation = "Long Buildup"
-    elif change_in_ltp < 0 and change_in_call_oi > 0 and change_in_put_oi < 0:
+    elif change_in_ltp < 0 and change_in_call_oi > 0:
         oi_interpretation = "Short Buildup"
-    elif change_in_ltp < 0 and change_in_call_oi > 0 and change_in_put_oi < 0:
+    elif change_in_ltp < 0 and change_in_call_oi < 0:
         oi_interpretation = "Long Unwinding"
-    elif change_in_ltp > 0 and change_in_call_oi < 0 and change_in_put_oi > 0:
+    elif change_in_ltp > 0 and change_in_call_oi < 0:
         oi_interpretation = "Short Covering"
 
 

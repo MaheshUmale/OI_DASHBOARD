@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request
 from database import SessionLocal, Stock, OIData, init_db
 from data_fetcher import fetch_oi_data, process_and_save_oi_data
+from seed import seed_stocks
 
 app = Flask(__name__)
 
@@ -28,4 +29,5 @@ def index():
 
 if __name__ == '__main__':
     init_db()
+    seed_stocks()
     app.run(debug=True)
