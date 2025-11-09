@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="60">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OI Dashboard</title>
     <style>
@@ -9,6 +10,10 @@
         table { border-collapse: collapse; width: 100%; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
+        .long-buildup { background-color: #d4edda; }
+        .short-buildup { background-color: #f8d7da; }
+        .long-unwinding { background-color: #fff3cd; }
+        .short-covering { background-color: #d1ecf1; }
     </style>
 </head>
 <body>
@@ -19,9 +24,6 @@
             {% for stock in stocks %}
                 <option value="{{ stock.symbol }}" {% if stock.symbol == selected_stock_symbol %}selected{% endif %}>{{ stock.symbol }}</option>
             {% endfor %}
-            <option value="BANKNIFTY">BANKNIFTY</option>
-            <option value="RELIANCE">RELIANCE</option>
-            <!-- Add more F&O stocks here -->
         </select>
         <button type="submit">Fetch Data</button>
     </form>
@@ -45,7 +47,7 @@
         </thead>
         <tbody>
             {% for row in data %}
-                <tr>
+                <tr class="{{ row.oi_interpretation.lower().replace(' ', '-') }}">
                     <td>{{ row.timestamp }}</td>
                     <td>{{ row.ltp }}</td>
                     <td>{{ row.change_in_ltp }}</td>
