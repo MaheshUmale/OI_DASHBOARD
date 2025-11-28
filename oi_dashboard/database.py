@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -62,21 +62,21 @@ def init_db():
     conn = engine.connect()
     try:
         def _has_column(table, column):
-            res = conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+            res = conn.execute(text(f"PRAGMA table_info('{table}')")).fetchall()
             existing = [r[1] for r in res]
             return column in existing
 
         # Ensure `max_pain` exists on `oi_data`
         if not _has_column('oi_data', 'max_pain'):
             try:
-                conn.execute("ALTER TABLE oi_data ADD COLUMN max_pain FLOAT")
+                conn.execute(text("ALTER TABLE oi_data ADD COLUMN max_pain FLOAT"))
             except Exception:
                 pass
 
         # Ensure `buy_sell_signal` exists on `oi_data`
         if not _has_column('oi_data', 'buy_sell_signal'):
             try:
-                conn.execute("ALTER TABLE oi_data ADD COLUMN buy_sell_signal TEXT")
+                conn.execute(text("ALTER TABLE oi_data ADD COLUMN buy_sell_signal TEXT"))
             except Exception:
                 pass
     finally:

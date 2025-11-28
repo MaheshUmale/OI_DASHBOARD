@@ -22,7 +22,7 @@ def init_dashboard(server):
         dbc.Row([
             dbc.Col(html.H1("NSE OI Analysis Dashboard", className="text-center text-primary mb-4"), width=12)
         ]),
-        
+
         dbc.Row([
             dbc.Col([
                 html.Label("Select Stocks/Indices:", className="text-white"),
@@ -42,6 +42,7 @@ def init_dashboard(server):
             dbc.Tab(label="Analysis", tab_id="tab-analysis"),
             dbc.Tab(label="Summary", tab_id="tab-summary"),
             dbc.Tab(label="OI Change Chart", tab_id="tab-oi-change"),
+            dbc.Tab(label="OI vs Price Chart", tab_id="tab-oi-change-time-series"),
         ], id="tabs", active_tab="tab-analysis"),
 
         html.Div(id="tab-content", className="p-4")
@@ -81,24 +82,27 @@ def init_callbacks(dash_app):
             return render_analysis(selected_symbols)
         elif active_tab == "tab-oi-change":
             return render_oi_change_chart()
+        elif active_tab == "tab-oi-change-time-series":
+            return render_oi_change_time_series_chart()
         return html.Div("404: Tab not found")
-    
+
     # Register OI Change Chart callback
     init_oi_change_callback(dash_app)
+    init_oi_change_time_series_callback(dash_app)
 
 def render_summary():
     db = SessionLocal()
     try:
         stocks = db.query(Stock).all()
         data = []
-        
+
         # Helper to calculate interpretation
         def calculate_interpretation(current, past):
             if not past:
                 return "N/A"
             change_ltp = current.ltp - past.ltp
             change_oi = current.call_oi - past.call_oi
-            
+
             if change_ltp > 0 and change_oi > 0:
                 return "Long Buildup"
             elif change_ltp < 0 and change_oi > 0:
@@ -111,12 +115,12 @@ def render_summary():
 
         for stock in stocks:
             records = db.query(OIData).filter(OIData.stock_id == stock.id).order_by(OIData.id.desc()).limit(20).all()
-            
+
             if not records:
                 continue
-                
+
             current = records[0]
-            
+
             # Find past records for 3m/5m/15m interp
             def find_past_record(minutes_ago):
                 target_time = datetime.strptime(f"{current.date} {current.timestamp}", "%Y-%m-%d %H:%M") - pd.Timedelta(minutes=minutes_ago)
@@ -136,7 +140,7 @@ def render_summary():
             rec_3m = find_past_record(3)
             rec_5m = find_past_record(5)
             rec_15m = find_past_record(15)
-            
+
             # Calculate % Change in OI (using Call OI as per existing logic)
             # Avoid division by zero
             prev_oi = current.call_oi - current.change_in_call_oi
@@ -156,15 +160,15 @@ def render_summary():
                 '15m': calculate_interpretation(current, rec_15m),
                 'Timestamp': current.timestamp
             })
-        
+
         if not data:
              return html.Div("No data available.", className="text-muted")
 
         df = pd.DataFrame(data)
-        
+
         # Define the 4 groups
         groups = ["Long Buildup", "Short Buildup", "Short Covering", "Long Unwinding"]
-        
+
         # Helper to create a table for a group
         def create_group_table(group_name, df_group):
             if df_group.empty:
@@ -221,7 +225,7 @@ def render_summary():
 
         # Handle "Neutral" or others?
         # Maybe add a "Others" section if needed, but user specifically asked for these 4.
-        
+
         return dbc.Row(cols)
 
     except Exception as e:
@@ -236,23 +240,23 @@ def render_analysis(selected_symbols):
     try:
         logger.info(f"Rendering analysis for: {selected_symbols}")
         today = datetime.now().date()
-        
+
         for symbol in selected_symbols:
             stock = db.query(Stock).filter(Stock.symbol == symbol).first()
             if not stock:
                 logger.warning(f"Stock {symbol} not found in DB")
                 continue
-            
+
             # Filter for today's data only
             records = db.query(OIData).filter(
                 OIData.stock_id == stock.id,
                 OIData.date == today
             ).order_by(OIData.id).all()
-            
+
             if not records:
                 logger.warning(f"No records found for {symbol} today")
                 continue
-            
+
             logger.info(f"Found {len(records)} records for {symbol} today")
 
             data_list = []
@@ -264,7 +268,7 @@ def render_analysis(selected_symbols):
                 except ValueError:
                     # Fallback if parsing fails
                     dt = r.timestamp
-                
+
                 data_list.append({
                     'timestamp': dt,
                     'ltp': r.ltp,
@@ -287,12 +291,12 @@ def render_analysis(selected_symbols):
 
             # Add Traces
             fig.add_trace(go.Scatter(x=df['timestamp'], y=df['ltp'], name="LTP", line=dict(color='cyan', width=1)))
-            
+
             # Logic for Max Pain display
             mp_text = ""
             if latest_max_pain:
                 mp_text = f" | Max Pain: {latest_max_pain}"
-                
+
                 # Check if Max Pain is within visible range of LTP
                 ltp_min = df['ltp'].min()
                 ltp_max = df['ltp'].max()
@@ -325,7 +329,7 @@ def render_analysis(selected_symbols):
                 ], className="mb-2 shadow-sm"), # Reduced margin bottom
                 xs=12, sm=6, md=4, lg=3 # Responsive grid: 1 on mobile, 2 on sm, 3 on md, 4 on lg
             ))
-        
+
         if not graphs:
              return html.Div("No data found for selected symbols today.", className="text-muted")
 
@@ -341,10 +345,10 @@ def render_oi_change_chart():
         # Get all stocks for dropdown
         stocks = db.query(Stock).order_by(Stock.symbol).all()
         stock_options = [{'label': s.symbol, 'value': s.symbol} for s in stocks]
-        
+
         # Default to NIFTY if available
         default_stock = 'NIFTY' if any(s.symbol == 'NIFTY' for s in stocks) else (stocks[0].symbol if stocks else None)
-        
+
         layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
@@ -358,7 +362,7 @@ def render_oi_change_chart():
                     ),
                 ], width=12, md=4),
             ]),
-            
+
             dbc.Row([
                 dbc.Col([
                     html.Label("Time Range:", className="text-white mb-2"),
@@ -374,14 +378,14 @@ def render_oi_change_chart():
                     ], className="mb-4"),
                 ], width=12),
             ]),
-            
+
             dbc.Row([
                 dbc.Col([
                     html.Div(id="oi-change-chart-container")
                 ], width=12)
             ])
         ], fluid=True)
-        
+
         return layout
     finally:
         db.close()
@@ -404,12 +408,12 @@ def init_oi_change_callback(dash_app):
     def update_oi_change_chart(selected_stock, *button_clicks):
         if not selected_stock:
             return html.Div("Please select a stock.", className="text-warning")
-        
+
         # Determine which button was clicked
         ctx = callback_context
         time_range_label = "15m"  # Default
         time_range_minutes = 15
-        
+
         if ctx.triggered:
             button_id = ctx.triggered[0]['prop_id'].split('.')[0]
             time_map = {
@@ -424,41 +428,41 @@ def init_oi_change_callback(dash_app):
             }
             if button_id in time_map:
                 time_range_minutes, time_range_label = time_map[button_id]
-        
+
         return generate_oi_change_chart(selected_stock, time_range_minutes, time_range_label)
 
 def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m"):
     """Generate the OI Change vs Strike bar chart for a given symbol and time range."""
     from database import OptionChainData
     from datetime import datetime, timedelta
-    
+
     db = SessionLocal()
     try:
         # Get stock
         stock = db.query(Stock).filter(Stock.symbol == symbol).first()
         if not stock:
             return html.Div(f"No data available for {symbol}.", className="text-warning")
-        
+
         # Get current time and calculate time range
         now = datetime.now()
         current_date = now.date()
         current_time_str = now.strftime("%H:%M")
-        
+
         # Calculate target time (X minutes ago)
         if time_range_minutes >= 999999:  # Full Day
             target_time = datetime.combine(current_date, datetime.min.time())
         else:
             target_time = now - timedelta(minutes=time_range_minutes)
-        
+
         # Get latest option chain data (current)
         latest_data = db.query(OptionChainData).filter(
             OptionChainData.stock_id == stock.id,
             OptionChainData.date == current_date
         ).order_by(OptionChainData.id.desc()).all()
-        
+
         if not latest_data:
             return html.Div(f"No option chain data available for {symbol} today.", className="text-warning")
-        
+
         # Group latest data by strike
         latest_by_strike = {}
         current_expiry = None
@@ -467,7 +471,7 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
                 current_expiry = entry.expiry_date
             if entry.expiry_date == current_expiry:  # Only current expiry
                 latest_by_strike[entry.strike_price] = entry
-        
+
         # Get historical data from target time
         # Find the closest timestamp to target_time
         past_data = db.query(OptionChainData).filter(
@@ -475,7 +479,7 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
             OptionChainData.date == current_date,
             OptionChainData.expiry_date == current_expiry
         ).all()
-        
+
         # Group by timestamp
         data_by_time = {}
         for entry in past_data:
@@ -483,11 +487,11 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
             if ts not in data_by_time:
                 data_by_time[ts] = {}
             data_by_time[ts][entry.strike_price] = entry
-        
+
         # Find closest past timestamp
         target_time_str = target_time.strftime("%H:%M")
         available_times = sorted(data_by_time.keys())
-        
+
         # Find the closest timestamp <= target_time
         past_time_key = None
         for t in available_times:
@@ -495,22 +499,22 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
                 past_time_key = t
             else:
                 break
-        
+
         if not past_time_key or past_time_key not in data_by_time:
             # Fallback to first available time if target not found
             past_time_key = available_times[0] if available_times else None
-        
+
         past_by_strike = data_by_time.get(past_time_key, {}) if past_time_key else {}
-        
+
         # Calculate changes
         strikes = sorted(latest_by_strike.keys())
         call_oi_changes = []
         put_oi_changes = []
-        
+
         for strike in strikes:
             current_entry = latest_by_strike.get(strike)
             past_entry = past_by_strike.get(strike)
-            
+
             if current_entry and past_entry:
                 call_change = current_entry.call_oi - past_entry.call_oi
                 put_change = current_entry.put_oi - past_entry.put_oi
@@ -521,36 +525,36 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
             else:
                 call_change = 0
                 put_change = 0
-            
+
             call_oi_changes.append(call_change)
             put_oi_changes.append(put_change)
-        
+
         # Get current price (from latest OIData or fetch from NSE)
         from data_fetcher import fetch_oi_data
         live_data = fetch_oi_data(symbol)
         current_price = live_data.get('records', {}).get('underlyingValue', 0) if live_data else 0
-        
+
         # Filter strikes to show only active range around current price
         # Show strikes within ±15% of current price (or at least ±1500 points for indices)
         if current_price > 0:
             price_range = max(current_price * 0.15, 1500)  # 15% or 1500 points, whichever is larger
             min_strike = current_price - price_range
             max_strike = current_price + price_range
-            
+
             # Filter data
             filtered_data = []
             for i, strike in enumerate(strikes):
                 if min_strike <= strike <= max_strike:
                     filtered_data.append((strike, call_oi_changes[i], put_oi_changes[i]))
-            
+
             if filtered_data:
                 strikes = [d[0] for d in filtered_data]
                 call_oi_changes = [d[1] for d in filtered_data]
                 put_oi_changes = [d[2] for d in filtered_data]
-        
+
         # Create bar chart
         fig = go.Figure()
-        
+
         # Add Put OI bars (green)
         fig.add_trace(go.Bar(
             x=strikes,
@@ -559,7 +563,7 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
             marker_color='#00FF00',  # Bright green
             opacity=0.8
         ))
-        
+
         # Add Call OI bars (red)
         fig.add_trace(go.Bar(
             x=strikes,
@@ -568,12 +572,12 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
             marker_color='#FF3333',  # Brighter red
             opacity=0.8
         ))
-        
+
         # Add vertical line for current price
         fig.add_vline(x=current_price, line_dash="dash", line_color="cyan", line_width=2,
                       annotation_text=f"{symbol} {current_price}", annotation_position="top",
                       annotation_font_size=10)
-        
+
         fig.update_layout(
             title=dict(text=f"OI Change ({time_range_label}) on {datetime.now().strftime('%d %b')} - {symbol} @ {current_price}", font=dict(size=14)),
             template="plotly_dark",
@@ -585,7 +589,7 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
             legend=dict(x=0, y=1, orientation="h", font=dict(size=10)),
             font=dict(size=10)
         )
-        
+
         # Calculate totals
         total_call_increase = sum(c for c in call_oi_changes if c > 0)
         total_put_increase = sum(p for p in put_oi_changes if p > 0)
@@ -594,7 +598,7 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
         net_put_change = sum(put_oi_changes)
         # Put vs Call net difference (positive means puts increased more)
         put_vs_call_net = net_put_change - net_call_change
-        
+
         summary = dbc.Row([
             dbc.Col([
                 dbc.Card([
@@ -646,9 +650,113 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
             net_summary,
             dcc.Graph(figure=fig, config={'displayModeBar': True})
         ])
-        
+
     except Exception as e:
         logger.exception(f"Error generating OI change chart for {symbol}: {e}")
         return html.Div(f"Error loading data: {e}", className="text-danger")
+    finally:
+        db.close()
+
+def render_oi_change_time_series_chart():
+    """Render the OI Change vs Price chart tab with dropdown and toggle."""
+    db = SessionLocal()
+    try:
+        stocks = db.query(Stock).order_by(Stock.symbol).all()
+        stock_options = [{'label': s.symbol, 'value': s.symbol} for s in stocks]
+        default_stock = 'NIFTY' if any(s.symbol == 'NIFTY' for s in stocks) else (stocks[0].symbol if stocks else None)
+
+        layout = dbc.Container([
+            dbc.Row([
+                dbc.Col([
+                    html.Label("Select Symbol:", className="text-white mb-2"),
+                    dcc.Dropdown(
+                        id='oi-time-series-stock-dropdown',
+                        options=stock_options,
+                        value=default_stock,
+                        clearable=False,
+                        className="text-dark mb-3"
+                    ),
+                ], width=12, md=4),
+                dbc.Col([
+                    html.Label("Y2 Axis Represents:", className="text-white mb-2"),
+                    dbc.RadioItems(
+                        options=[
+                            {'label': 'Change in OI', 'value': 'change'},
+                            {'label': 'Total OI', 'value': 'total'},
+                        ],
+                        value='change',
+                        id="oi-time-series-toggle",
+                        inline=True,
+                        className="text-white"
+                    ),
+                ], width=12, md=4),
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    html.Div(id="oi-change-time-series-chart-container")
+                ], width=12)
+            ])
+        ], fluid=True)
+
+        return layout
+    finally:
+        db.close()
+
+def init_oi_change_time_series_callback(dash_app):
+    @dash_app.callback(
+        Output('oi-change-time-series-chart-container', 'children'),
+        [Input('oi-time-series-stock-dropdown', 'value'),
+         Input('oi-time-series-toggle', 'value')]
+    )
+    def update_oi_change_time_series_chart(selected_stock, y2_axis_reps):
+        if not selected_stock:
+            return html.Div("Please select a stock.", className="text-warning")
+
+        return generate_oi_change_time_series_chart(selected_stock, y2_axis_reps)
+
+def generate_oi_change_time_series_chart(symbol, y2_axis_reps):
+    """Generate the OI Change vs Price time series chart."""
+    db = SessionLocal()
+    try:
+        stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+        if not stock:
+            return html.Div("No data available for " + symbol, className="text-warning")
+
+        today = datetime.now().date()
+        records = db.query(OIData).filter(
+            OIData.stock_id == stock.id,
+            OIData.date == today
+        ).order_by(OIData.id).all()
+
+        if not records:
+            return html.Div("No records found for " + symbol + " today.", className="text-warning")
+
+        df = pd.DataFrame([r.__dict__ for r in records])
+
+        # Calculate change in OI since start of day
+        df['call_oi_change_sod'] = df['call_oi'] - df['call_oi'].iloc[0]
+        df['put_oi_change_sod'] = df['put_oi'] - df['put_oi'].iloc[0]
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['ltp'], name="Price", line=dict(color='cyan', width=2), yaxis="y1"))
+
+        if y2_axis_reps == 'change':
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['call_oi_change_sod'], name="CE OI Change", line=dict(color='red', width=2), yaxis="y2"))
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['put_oi_change_sod'], name="PE OI Change", line=dict(color='green', width=2), yaxis="y2"))
+        else:
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['call_oi'], name="Total CE OI", line=dict(color='red', width=2), yaxis="y2"))
+            fig.add_trace(go.Scatter(x=df['timestamp'], y=df['put_oi'], name="Total PE OI", line=dict(color='green', width=2), yaxis="y2"))
+
+        title_str = symbol + " - Price vs OI (" + y2_axis_reps.capitalize() + ")"
+        fig.update_layout(
+            title=title_str,
+            template="plotly_dark",
+            yaxis=dict(title="Price"),
+            yaxis2=dict(title="Open Interest", overlaying='y', side='right'),
+            legend=dict(x=0.01, y=0.99)
+        )
+
+        return dcc.Graph(figure=fig)
     finally:
         db.close()
