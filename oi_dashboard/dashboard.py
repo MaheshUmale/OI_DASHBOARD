@@ -30,7 +30,7 @@ def init_dashboard(server):
                     id='stock-dropdown',
                     multi=False,
                     placeholder="Select a symbol...",
-                    className="text-white"
+                    className="text-dark"
                 ),
             ], width=12, md=6),
             dbc.Col([
