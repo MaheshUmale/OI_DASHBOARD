@@ -1,6 +1,7 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import datetime
 
 DATABASE_URL = "sqlite:///oi_data.db"
 
@@ -17,8 +18,7 @@ class OIData(Base):
     __tablename__ = "oi_data"
     id = Column(Integer, primary_key=True, index=True)
     stock_id = Column(Integer, index=True)
-    date = Column(Date)
-    timestamp = Column(String)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     ltp = Column(Float)
     change_in_ltp = Column(Float)
     volume = Column(Integer)
@@ -28,6 +28,10 @@ class OIData(Base):
     change_in_call_oi = Column(Integer)
     put_oi = Column(Integer)
     change_in_put_oi = Column(Integer)
+    prev_expiry_call_oi = Column(Integer)
+    change_in_prev_expiry_call_oi = Column(Integer)
+    prev_expiry_put_oi = Column(Integer)
+    change_in_prev_expiry_put_oi = Column(Integer)
     oi_interpretation = Column(String)
     buy_sell_signal = Column(String)
 

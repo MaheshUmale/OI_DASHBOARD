@@ -7,27 +7,36 @@
     <title>OI Dashboard</title>
     <style>
         body { font-family: sans-serif; }
-        table { border-collapse: collapse; width: 100%; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
         .long-buildup { background-color: #d4edda; }
         .short-buildup { background-color: #f8d7da; }
         .long-unwinding { background-color: #fff3cd; }
         .short-covering { background-color: #d1ecf1; }
+        .summary { margin-bottom: 20px; }
     </style>
 </head>
 <body>
     <h1>Open Interest Dashboard</h1>
-    <form method="POST">
+    <form method="POST" id="stock-form">
         <label for="stock_symbol">Select Stock:</label>
-        <select name="stock_symbol" id="stock_symbol">
+        <select name="stock_symbol" id="stock_symbol" onchange="document.getElementById('stock-form').submit()">
             {% for stock in stocks %}
                 <option value="{{ stock.symbol }}" {% if stock.symbol == selected_stock_symbol %}selected{% endif %}>{{ stock.symbol }}</option>
             {% endfor %}
         </select>
-        <button type="submit">Fetch Data</button>
     </form>
     <h2>Data for {{ selected_stock_symbol }}</h2>
+
+    <div class="summary">
+        <h3>Rolling OI Changes</h3>
+        <p><strong>3-Min Rolling Call OI Change:</strong> {{ rolling_3min_call_change }}</p>
+        <p><strong>3-Min Rolling Put OI Change:</strong> {{ rolling_3min_put_change }}</p>
+        <p><strong>5-Min Rolling Call OI Change:</strong> {{ rolling_5min_call_change }}</p>
+        <p><strong>5-Min Rolling Put OI Change:</strong> {{ rolling_5min_put_change }}</p>
+    </div>
+
     <table border="1">
         <thead>
             <tr>
@@ -35,31 +44,33 @@
                 <th>LTP</th>
                 <th>Change in LTP</th>
                 <th>Volume</th>
-                <th>Future OI</th>
-                <th>Change in Future OI</th>
                 <th>Call OI</th>
                 <th>Change in Call OI</th>
                 <th>Put OI</th>
                 <th>Change in Put OI</th>
+                <th>Prev Expiry Call OI</th>
+                <th>Change in Prev Expiry Call OI</th>
+                <th>Prev Expiry Put OI</th>
+                <th>Change in Prev Expiry Put OI</th>
                 <th>OI Interpretation</th>
-                <th>Buy/Sell Signal</th>
             </tr>
         </thead>
         <tbody>
             {% for row in data %}
-                <tr class="{{ row.oi_interpretation.lower().replace(' ', '-') }}">
-                    <td>{{ row.timestamp }}</td>
+                <tr class="{{ row.oi_interpretation.lower().replace(' ', '-') if row.oi_interpretation else '' }}">
+                    <td>{{ row.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
                     <td>{{ row.ltp }}</td>
                     <td>{{ row.change_in_ltp }}</td>
                     <td>{{ row.volume }}</td>
-                    <td>{{ row.future_oi }}</td>
-                    <td>{{ row.change_in_future_oi }}</td>
                     <td>{{ row.call_oi }}</td>
                     <td>{{ row.change_in_call_oi }}</td>
                     <td>{{ row.put_oi }}</td>
                     <td>{{ row.change_in_put_oi }}</td>
+                    <td>{{ row.prev_expiry_call_oi }}</td>
+                    <td>{{ row.change_in_prev_expiry_call_oi }}</td>
+                    <td>{{ row.prev_expiry_put_oi }}</td>
+                    <td>{{ row.change_in_prev_expiry_put_oi }}</td>
                     <td>{{ row.oi_interpretation }}</td>
-                    <td>{{ row.buy_sell_signal }}</td>
                 </tr>
             {% endfor %}
         </tbody>
