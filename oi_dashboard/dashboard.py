@@ -24,6 +24,17 @@ def init_dashboard(server):
         ]),
 
         dbc.Row([
+            dbc.Col(
+                dbc.Alert(
+                    "Live data is currently unavailable. The dashboard is operating with historical data.",
+                    color="warning",
+                    className="text-center",
+                ),
+                width=12,
+            )
+        ]),
+
+        dbc.Row([
             dbc.Col([
                 html.Label("Select Stock/Index:", className="text-white"),
                 dcc.Dropdown(
@@ -79,15 +90,15 @@ def init_callbacks(dash_app):
         elif active_tab == "tab-analysis":
             if not selected_symbol:
                 return html.Div("Please select a stock to view analysis.", className="text-warning")
-            return render_analysis([selected_symbol]) # Pass as a list for compatibility
+            return render_analysis(selected_symbol)
         elif active_tab == "tab-oi-change":
             if not selected_symbol:
                 return html.Div("Please select a stock.", className="text-warning")
-            return render_oi_change_chart([selected_symbol])
+            return render_oi_change_chart(selected_symbol)
         elif active_tab == "tab-oi-change-time-series":
             if not selected_symbol:
                 return html.Div("Please select a stock.", className="text-warning")
-            return render_oi_change_time_series_chart([selected_symbol])
+            return render_oi_change_time_series_chart(selected_symbol)
         return html.Div("404: Tab not found")
 
     # Register OI Change Chart callback
@@ -238,48 +249,47 @@ def render_summary():
     finally:
         db.close()
 
-def render_analysis(selected_symbols):
+def render_analysis(selected_symbol):
     graphs = []
     db = SessionLocal()
     try:
-        logger.info(f"Rendering analysis for: {selected_symbols}")
+        logger.info(f"Rendering analysis for: {selected_symbol}")
         today = datetime.now().date()
 
-        for symbol in selected_symbols:
-            stock = db.query(Stock).filter(Stock.symbol == symbol).first()
-            if not stock:
-                logger.warning(f"Stock {symbol} not found in DB")
-                continue
+        stock = db.query(Stock).filter(Stock.symbol == selected_symbol).first()
+        if not stock:
+            logger.warning(f"Stock {selected_symbol} not found in DB")
+            return html.Div(f"Stock {selected_symbol} not found.", className="text-warning")
 
-            # Filter for today's data only
-            records = db.query(OIData).filter(
-                OIData.stock_id == stock.id,
-                OIData.date == today
-            ).order_by(OIData.id).all()
+        # Filter for today's data only
+        records = db.query(OIData).filter(
+            OIData.stock_id == stock.id,
+            OIData.date == today
+        ).order_by(OIData.id).all()
 
-            if not records:
-                logger.warning(f"No records found for {symbol} today")
-                continue
+        if not records:
+            logger.warning(f"No records found for {selected_symbol} today")
+            return html.Div(f"No data found for {selected_symbol} today.", className="text-muted")
 
-            logger.info(f"Found {len(records)} records for {symbol} today")
+        logger.info(f"Found {len(records)} records for {selected_symbol} today")
 
-            data_list = []
-            for r in records:
-                # Combine date and timestamp
-                dt_str = f"{r.date} {r.timestamp}"
-                try:
-                    dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-                except ValueError:
-                    # Fallback if parsing fails
-                    dt = r.timestamp
+        data_list = []
+        for r in records:
+            # Combine date and timestamp
+            dt_str = f"{r.date} {r.timestamp}"
+            try:
+                dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                # Fallback if parsing fails
+                dt = r.timestamp
 
-                data_list.append({
-                    'timestamp': dt,
-                    'ltp': r.ltp,
-                    'call_oi': r.call_oi,
-                    'put_oi': r.put_oi,
-                    'max_pain': r.max_pain if hasattr(r, 'max_pain') else None
-                })
+            data_list.append({
+                'timestamp': dt,
+                'ltp': r.ltp,
+                'call_oi': r.call_oi,
+                'put_oi': r.put_oi,
+                'max_pain': r.max_pain if hasattr(r, 'max_pain') else None
+            })
 
             df = pd.DataFrame(data_list)
 
@@ -316,7 +326,7 @@ def render_analysis(selected_symbols):
 
             # Layout - Compact
             fig.update_layout(
-                title=dict(text=f"{symbol}{mp_text}", font=dict(size=11), y=0.98, yanchor='top'),
+                title=dict(text=f"{selected_symbol}{mp_text}", font=dict(size=11), y=0.98, yanchor='top'),
                 template="plotly_dark",
                 yaxis=dict(title=None, showgrid=False), # Hide y-axis title to save space
                 yaxis2=dict(title=None, overlaying="y", side="right", showgrid=False),
@@ -327,28 +337,27 @@ def render_analysis(selected_symbols):
             )
 
             # Add to grid column (width=4 means 3 graphs per row on large screens)
-            graphs.append(dbc.Col(
-                dbc.Card([
-                    dbc.CardBody(dcc.Graph(figure=fig, config={'displayModeBar': False}))
-                ], className="mb-2 shadow-sm"), # Reduced margin bottom
-                xs=12, sm=6, md=4, lg=3 # Responsive grid: 1 on mobile, 2 on sm, 3 on md, 4 on lg
-            ))
+        graphs = dbc.Col(
+            dbc.Card([
+                dbc.CardBody(dcc.Graph(figure=fig, config={'displayModeBar': False}))
+            ], className="mb-2 shadow-sm"), # Reduced margin bottom
+            xs=12, sm=6, md=4, lg=3 # Responsive grid: 1 on mobile, 2 on sm, 3 on md, 4 on lg
+        )
 
         if not graphs:
-             return html.Div("No data found for selected symbols today.", className="text-muted")
+             return html.Div("No data found for selected symbol today.", className="text-muted")
 
         return dbc.Row(graphs) # Wrap columns in a Row
 
     finally:
         db.close()
 
-def render_oi_change_chart(selected_symbols):
+def render_oi_change_chart(selected_symbol):
     """Render the OI Change vs Strike chart tab with dropdown and time range selector."""
-    if not selected_symbols:
+    if not selected_symbol:
         return dbc.Card(dbc.CardBody("Please select a stock to view the OI Change Chart."))
 
-    # For this chart, we only use the first selected stock
-    symbol = selected_symbols[0]
+    symbol = selected_symbol
 
     db = SessionLocal()
     try:
@@ -396,12 +405,11 @@ def init_oi_change_callback(dash_app):
          Input('btn-full', 'n_clicks')],
         prevent_initial_call=True
     )
-    def update_oi_change_chart(selected_symbols, *button_clicks):
-        if not selected_symbols:
+    def update_oi_change_chart(selected_symbol, *button_clicks):
+        if not selected_symbol:
             return html.Div("Please select a stock from the main dropdown.", className="text-warning")
 
-        # Use the first selected symbol for this chart
-        selected_stock = selected_symbols[0]
+        selected_stock = selected_symbol
 
         ctx = callback_context
         time_range_label = "15m"  # Default
@@ -650,12 +658,12 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
     finally:
         db.close()
 
-def render_oi_change_time_series_chart(selected_symbols):
+def render_oi_change_time_series_chart(selected_symbol):
     """Render the OI Change vs Price chart tab with dropdown and toggle."""
-    if not selected_symbols:
+    if not selected_symbol:
         return dbc.Card(dbc.CardBody("Please select a stock to view the OI vs Price Chart."))
 
-    symbol = selected_symbols[0]
+    symbol = selected_symbol
 
     db = SessionLocal()
     try:
@@ -694,12 +702,11 @@ def init_oi_change_time_series_callback(dash_app):
         [Input('stock-dropdown', 'value'),
          Input('oi-time-series-toggle', 'value')]
     )
-    def update_oi_change_time_series_chart(selected_symbols, y2_axis_reps):
-        if not selected_symbols:
+    def update_oi_change_time_series_chart(selected_symbol, y2_axis_reps):
+        if not selected_symbol:
             return html.Div("Please select a stock.", className="text-warning")
 
-        selected_stock = selected_symbols[0]
-        return generate_oi_change_time_series_chart(selected_stock, y2_axis_reps)
+        return generate_oi_change_time_series_chart(selected_symbol, y2_axis_reps)
 
 def generate_oi_change_time_series_chart(symbol, y2_axis_reps):
     """Generate the OI Change vs Price time series chart."""
