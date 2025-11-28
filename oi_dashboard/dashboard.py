@@ -254,7 +254,12 @@ def render_analysis(selected_symbol):
     db = SessionLocal()
     try:
         logger.info(f"Rendering analysis for: {selected_symbol}")
-        today = datetime.now().date()
+
+        # Get the most recent date from the database
+        most_recent_date = db.query(OIData.date).order_by(OIData.date.desc()).first()
+        if not most_recent_date:
+            return html.Div("No data available in the database.", className="text-warning")
+        today = most_recent_date[0]
 
         stock = db.query(Stock).filter(Stock.symbol == selected_symbol).first()
         if not stock:
@@ -344,10 +349,7 @@ def render_analysis(selected_symbol):
             xs=12, sm=6, md=4, lg=3 # Responsive grid: 1 on mobile, 2 on sm, 3 on md, 4 on lg
         )
 
-        if not graphs:
-             return html.Div("No data found for selected symbol today.", className="text-muted")
-
-        return dbc.Row(graphs) # Wrap columns in a Row
+        return dbc.Row([graphs]) # Wrap columns in a Row
 
     finally:
         db.close()
@@ -716,7 +718,12 @@ def generate_oi_change_time_series_chart(symbol, y2_axis_reps):
         if not stock:
             return html.Div("No data available for " + symbol, className="text-warning")
 
-        today = datetime.now().date()
+        # Get the most recent date from the database
+        most_recent_date = db.query(OIData.date).order_by(OIData.date.desc()).first()
+        if not most_recent_date:
+            return html.Div("No data available in the database.", className="text-warning")
+        today = most_recent_date[0]
+
         records = db.query(OIData).filter(
             OIData.stock_id == stock.id,
             OIData.date == today
