@@ -25,11 +25,11 @@ def init_dashboard(server):
 
         dbc.Row([
             dbc.Col([
-                html.Label("Select Stocks/Indices:", className="text-white"),
+                html.Label("Select Stock/Index:", className="text-white"),
                 dcc.Dropdown(
                     id='stock-dropdown',
-                    multi=True,
-                    placeholder="Select symbols...",
+                    multi=False,
+                    placeholder="Select a symbol...",
                     className="text-white"
                 ),
             ], width=12, md=6),
@@ -73,17 +73,21 @@ def init_callbacks(dash_app):
          Input('stock-dropdown', 'value'),
          Input('refresh-btn', 'n_clicks')]
     )
-    def render_content(active_tab, selected_symbols, n_clicks):
+    def render_content(active_tab, selected_symbol, n_clicks):
         if active_tab == "tab-summary":
             return render_summary()
         elif active_tab == "tab-analysis":
-            if not selected_symbols:
-                return html.Div("Please select at least one stock to view analysis.", className="text-warning")
-            return render_analysis(selected_symbols)
+            if not selected_symbol:
+                return html.Div("Please select a stock to view analysis.", className="text-warning")
+            return render_analysis([selected_symbol]) # Pass as a list for compatibility
         elif active_tab == "tab-oi-change":
-            return render_oi_change_chart()
+            if not selected_symbol:
+                return html.Div("Please select a stock.", className="text-warning")
+            return render_oi_change_chart([selected_symbol])
         elif active_tab == "tab-oi-change-time-series":
-            return render_oi_change_time_series_chart()
+            if not selected_symbol:
+                return html.Div("Please select a stock.", className="text-warning")
+            return render_oi_change_time_series_chart([selected_symbol])
         return html.Div("404: Tab not found")
 
     # Register OI Change Chart callback
@@ -338,63 +342,50 @@ def render_analysis(selected_symbols):
     finally:
         db.close()
 
-def render_oi_change_chart():
+def render_oi_change_chart(selected_symbols):
     """Render the OI Change vs Strike chart tab with dropdown and time range selector."""
+    if not selected_symbols:
+        return dbc.Card(dbc.CardBody("Please select a stock to view the OI Change Chart."))
+
+    # For this chart, we only use the first selected stock
+    symbol = selected_symbols[0]
+
     db = SessionLocal()
     try:
-        # Get all stocks for dropdown
-        stocks = db.query(Stock).order_by(Stock.symbol).all()
-        stock_options = [{'label': s.symbol, 'value': s.symbol} for s in stocks]
-
-        # Default to NIFTY if available
-        default_stock = 'NIFTY' if any(s.symbol == 'NIFTY' for s in stocks) else (stocks[0].symbol if stocks else None)
-
-        layout = dbc.Container([
-            dbc.Row([
-                dbc.Col([
-                    html.Label("Select Symbol:", className="text-white mb-2"),
-                    dcc.Dropdown(
-                        id='oi-change-stock-dropdown',
-                        options=stock_options,
-                        value=default_stock,
-                        clearable=False,
-                        className="text-dark mb-3"
-                    ),
-                ], width=12, md=4),
-            ]),
-
-            dbc.Row([
-                dbc.Col([
-                    html.Label("Time Range:", className="text-white mb-2"),
-                    dbc.ButtonGroup([
-                        dbc.Button("5m", id="btn-5m", outline=True, color="primary", size="sm"),
-                        dbc.Button("10m", id="btn-10m", outline=True, color="primary", size="sm"),
-                        dbc.Button("15m", id="btn-15m", outline=True, color="primary", size="sm", active=True),
-                        dbc.Button("30m", id="btn-30m", outline=True, color="primary", size="sm"),
-                        dbc.Button("1h", id="btn-1h", outline=True, color="primary", size="sm"),
-                        dbc.Button("2h", id="btn-2h", outline=True, color="primary", size="sm"),
-                        dbc.Button("3h", id="btn-3h", outline=True, color="primary", size="sm"),
-                        dbc.Button("Full Day", id="btn-full", outline=True, color="primary", size="sm"),
-                    ], className="mb-4"),
-                ], width=12),
-            ]),
-
-            dbc.Row([
-                dbc.Col([
-                    html.Div(id="oi-change-chart-container")
-                ], width=12)
+        # Layout wrapped in Card
+        layout = dbc.Card([
+            dbc.CardHeader("OI Change vs Strike Price"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.H4(f"Displaying OI Change for: {symbol}", className="text-info"),
+                        html.Label("Time Range:", className="text-white mb-2"),
+                        dbc.ButtonGroup([
+                            dbc.Button("5m", id="btn-5m", outline=True, color="primary", size="sm"),
+                            dbc.Button("10m", id="btn-10m", outline=True, color="primary", size="sm"),
+                            dbc.Button("15m", id="btn-15m", outline=True, color="primary", size="sm", active=True),
+                            dbc.Button("30m", id="btn-30m", outline=True, color="primary", size="sm"),
+                            dbc.Button("1h", id="btn-1h", outline=True, color="primary", size="sm"),
+                            dbc.Button("2h", id="btn-2h", outline=True, color="primary", size="sm"),
+                            dbc.Button("3h", id="btn-3h", outline=True, color="primary", size="sm"),
+                            dbc.Button("Full Day", id="btn-full", outline=True, color="primary", size="sm"),
+                        ], className="mb-4"),
+                    ], width=12),
+                ]),
+                dbc.Row([
+                    dbc.Col(html.Div(id="oi-change-chart-container"), width=12)
+                ])
             ])
-        ], fluid=True)
-
+        ])
         return layout
     finally:
         db.close()
 
-# Add callback for OI Change Chart
+
 def init_oi_change_callback(dash_app):
     @dash_app.callback(
         Output('oi-change-chart-container', 'children'),
-        [Input('oi-change-stock-dropdown', 'value'),
+        [Input('stock-dropdown', 'value'),
          Input('btn-5m', 'n_clicks'),
          Input('btn-10m', 'n_clicks'),
          Input('btn-15m', 'n_clicks'),
@@ -403,13 +394,15 @@ def init_oi_change_callback(dash_app):
          Input('btn-2h', 'n_clicks'),
          Input('btn-3h', 'n_clicks'),
          Input('btn-full', 'n_clicks')],
-        prevent_initial_call=False
+        prevent_initial_call=True
     )
-    def update_oi_change_chart(selected_stock, *button_clicks):
-        if not selected_stock:
-            return html.Div("Please select a stock.", className="text-warning")
+    def update_oi_change_chart(selected_symbols, *button_clicks):
+        if not selected_symbols:
+            return html.Div("Please select a stock from the main dropdown.", className="text-warning")
 
-        # Determine which button was clicked
+        # Use the first selected symbol for this chart
+        selected_stock = selected_symbols[0]
+
         ctx = callback_context
         time_range_label = "15m"  # Default
         time_range_minutes = 15
@@ -657,47 +650,40 @@ def generate_oi_change_chart(symbol, time_range_minutes, time_range_label="15m")
     finally:
         db.close()
 
-def render_oi_change_time_series_chart():
+def render_oi_change_time_series_chart(selected_symbols):
     """Render the OI Change vs Price chart tab with dropdown and toggle."""
+    if not selected_symbols:
+        return dbc.Card(dbc.CardBody("Please select a stock to view the OI vs Price Chart."))
+
+    symbol = selected_symbols[0]
+
     db = SessionLocal()
     try:
-        stocks = db.query(Stock).order_by(Stock.symbol).all()
-        stock_options = [{'label': s.symbol, 'value': s.symbol} for s in stocks]
-        default_stock = 'NIFTY' if any(s.symbol == 'NIFTY' for s in stocks) else (stocks[0].symbol if stocks else None)
-
-        layout = dbc.Container([
-            dbc.Row([
-                dbc.Col([
-                    html.Label("Select Symbol:", className="text-white mb-2"),
-                    dcc.Dropdown(
-                        id='oi-time-series-stock-dropdown',
-                        options=stock_options,
-                        value=default_stock,
-                        clearable=False,
-                        className="text-dark mb-3"
-                    ),
-                ], width=12, md=4),
-                dbc.Col([
-                    html.Label("Y2 Axis Represents:", className="text-white mb-2"),
-                    dbc.RadioItems(
-                        options=[
-                            {'label': 'Change in OI', 'value': 'change'},
-                            {'label': 'Total OI', 'value': 'total'},
-                        ],
-                        value='change',
-                        id="oi-time-series-toggle",
-                        inline=True,
-                        className="text-white"
-                    ),
-                ], width=12, md=4),
-            ]),
-            dbc.Row([
-                dbc.Col([
-                    html.Div(id="oi-change-time-series-chart-container")
-                ], width=12)
+        # Layout wrapped in Card
+        layout = dbc.Card([
+            dbc.CardHeader("OI vs Price Chart"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.H4(f"Displaying OI vs Price for: {symbol}", className="text-info"),
+                        html.Label("Y2 Axis Represents:", className="text-white mb-2"),
+                        dbc.RadioItems(
+                            options=[
+                                {'label': 'Change in OI', 'value': 'change'},
+                                {'label': 'Total OI', 'value': 'total'},
+                            ],
+                            value='change',
+                            id="oi-time-series-toggle",
+                            inline=True,
+                            className="text-white"
+                        ),
+                    ], width=12, md=8),
+                ]),
+                dbc.Row([
+                    dbc.Col(html.Div(id="oi-change-time-series-chart-container"), width=12)
+                ])
             ])
-        ], fluid=True)
-
+        ])
         return layout
     finally:
         db.close()
@@ -705,13 +691,14 @@ def render_oi_change_time_series_chart():
 def init_oi_change_time_series_callback(dash_app):
     @dash_app.callback(
         Output('oi-change-time-series-chart-container', 'children'),
-        [Input('oi-time-series-stock-dropdown', 'value'),
+        [Input('stock-dropdown', 'value'),
          Input('oi-time-series-toggle', 'value')]
     )
-    def update_oi_change_time_series_chart(selected_stock, y2_axis_reps):
-        if not selected_stock:
+    def update_oi_change_time_series_chart(selected_symbols, y2_axis_reps):
+        if not selected_symbols:
             return html.Div("Please select a stock.", className="text-warning")
 
+        selected_stock = selected_symbols[0]
         return generate_oi_change_time_series_chart(selected_stock, y2_axis_reps)
 
 def generate_oi_change_time_series_chart(symbol, y2_axis_reps):
