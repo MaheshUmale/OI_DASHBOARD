@@ -17,6 +17,16 @@ logger = logging.getLogger('oi_dashboard')
 
 app = Flask(__name__)
 
+# Read configuration from environment variables (defaults preserved)
+try:
+    INTERVAL_SECONDS = int(os.getenv('OI_SCAN_INTERVAL', '10'))
+except Exception:
+    INTERVAL_SECONDS = 10
+try:
+    BATCH_SIZE = int(os.getenv('OI_BATCH_SIZE', '30'))
+except Exception:
+    BATCH_SIZE = 30
+
 # Initialize Dash App
 dash_app = init_dashboard(app)
 
@@ -242,84 +252,71 @@ def background_scan_loop(interval_seconds=20, batch_size=20):
             time.sleep(sleep_for + random.uniform(0, 1.0))
 
 
+# Add a simple status endpoint to inspect scanner progress
+@app.route('/status')
+def status():
+    db = SessionLocal()
+    total = db.query(Stock).count()
+    last_scan_index = db.query(Meta).filter(Meta.key == 'last_scan_index').first()
+    last_run_time = db.query(Meta).filter(Meta.key == 'last_run_time').first()
+    result = {
+        'total_symbols': total,
+        'last_scan_index': int(last_scan_index.value) if last_scan_index and last_scan_index.value is not None else None,
+        'last_run_time': last_run_time.value if last_run_time and last_run_time.value is not None else None,
+        'interval_seconds': INTERVAL_SECONDS,
+        'batch_size': BATCH_SIZE
+    }
+    db.close()
+    return jsonify(result)
+
+
+@app.route('/admin', methods=['GET', 'POST'])
+def admin():
+    """GET returns current runtime config; POST accepts JSON or form to update
+    'oi_scan_interval' and 'oi_batch_size' values which are stored in the meta table.
+    """
+    db = SessionLocal()
+    if request.method == 'POST':
+        # Support JSON and form
+        payload = request.get_json(silent=True) or request.form
+        interval = payload.get('oi_scan_interval') or payload.get('interval_seconds') or payload.get('interval')
+        batch = payload.get('oi_batch_size') or payload.get('batch_size') or payload.get('batch')
+        resp = {}
+        try:
+            if interval is not None:
+                set_meta(db, 'oi_scan_interval', str(int(interval)))
+                resp['oi_scan_interval'] = int(interval)
+            if batch is not None:
+                set_meta(db, 'oi_batch_size', str(int(batch)))
+                resp['oi_batch_size'] = int(batch)
+            # return current values
+            total = db.query(Stock).count()
+            last_scan_index = db.query(Meta).filter(Meta.key == 'last_scan_index').first()
+            resp.update({'total_symbols': total, 'last_scan_index': int(last_scan_index.value) if last_scan_index and last_scan_index.value is not None else None})
+            db.close()
+            logger.info(f"Admin updated settings: {resp}")
+            return jsonify(resp)
+        except Exception as e:
+            db.close()
+            logger.exception(f"Admin update failed: {e}")
+            return jsonify({'error': str(e)}), 400
+
+    # GET: show current values
+    last_scan_index = db.query(Meta).filter(Meta.key == 'last_scan_index').first()
+    meta_interval = db.query(Meta).filter(Meta.key == 'oi_scan_interval').first()
+    meta_batch = db.query(Meta).filter(Meta.key == 'oi_batch_size').first()
+    result = {
+        'oi_scan_interval': int(meta_interval.value) if meta_interval and meta_interval.value is not None else INTERVAL_SECONDS,
+        'oi_batch_size': int(meta_batch.value) if meta_batch and meta_batch.value is not None else BATCH_SIZE,
+        'last_scan_index': int(last_scan_index.value) if last_scan_index and last_scan_index.value is not None else None
+    }
+    db.close()
+    return jsonify(result)
+
 if __name__ == '__main__':
     init_db()
     seed_stocks()
 
-    # Read configuration from environment variables (defaults preserved)
-    try:
-        INTERVAL_SECONDS = int(os.getenv('OI_SCAN_INTERVAL', '10'))
-    except Exception:
-        INTERVAL_SECONDS = 10
-    try:
-        BATCH_SIZE = int(os.getenv('OI_BATCH_SIZE', '30'))
-    except Exception:
-        BATCH_SIZE = 30
-
-    # Start background scanner thread (daemon so it won't block shutdown)
     scanner_thread = threading.Thread(target=background_scan_loop, args=(INTERVAL_SECONDS, BATCH_SIZE), daemon=True)
     scanner_thread.start()
-
-    # Add a simple status endpoint to inspect scanner progress
-    @app.route('/status')
-    def status():
-        db = SessionLocal()
-        total = db.query(Stock).count()
-        last_scan_index = db.query(Meta).filter(Meta.key == 'last_scan_index').first()
-        last_run_time = db.query(Meta).filter(Meta.key == 'last_run_time').first()
-        result = {
-            'total_symbols': total,
-            'last_scan_index': int(last_scan_index.value) if last_scan_index and last_scan_index.value is not None else None,
-            'last_run_time': last_run_time.value if last_run_time and last_run_time.value is not None else None,
-            'interval_seconds': INTERVAL_SECONDS,
-            'batch_size': BATCH_SIZE
-        }
-        db.close()
-        return jsonify(result)
-
-
-        @app.route('/admin', methods=['GET', 'POST'])
-        def admin():
-            """GET returns current runtime config; POST accepts JSON or form to update
-            'oi_scan_interval' and 'oi_batch_size' values which are stored in the meta table.
-            """
-            db = SessionLocal()
-            if request.method == 'POST':
-                # Support JSON and form
-                payload = request.get_json(silent=True) or request.form
-                interval = payload.get('oi_scan_interval') or payload.get('interval_seconds') or payload.get('interval')
-                batch = payload.get('oi_batch_size') or payload.get('batch_size') or payload.get('batch')
-                resp = {}
-                try:
-                    if interval is not None:
-                        set_meta(db, 'oi_scan_interval', str(int(interval)))
-                        resp['oi_scan_interval'] = int(interval)
-                    if batch is not None:
-                        set_meta(db, 'oi_batch_size', str(int(batch)))
-                        resp['oi_batch_size'] = int(batch)
-                    # return current values
-                    total = db.query(Stock).count()
-                    last_scan_index = db.query(Meta).filter(Meta.key == 'last_scan_index').first()
-                    resp.update({'total_symbols': total, 'last_scan_index': int(last_scan_index.value) if last_scan_index and last_scan_index.value is not None else None})
-                    db.close()
-                    logger.info(f"Admin updated settings: {resp}")
-                    return jsonify(resp)
-                except Exception as e:
-                    db.close()
-                    logger.exception(f"Admin update failed: {e}")
-                    return jsonify({'error': str(e)}), 400
-
-            # GET: show current values
-            last_scan_index = db.query(Meta).filter(Meta.key == 'last_scan_index').first()
-            meta_interval = db.query(Meta).filter(Meta.key == 'oi_scan_interval').first()
-            meta_batch = db.query(Meta).filter(Meta.key == 'oi_batch_size').first()
-            result = {
-                'oi_scan_interval': int(meta_interval.value) if meta_interval and meta_interval.value is not None else INTERVAL_SECONDS,
-                'oi_batch_size': int(meta_batch.value) if meta_batch and meta_batch.value is not None else BATCH_SIZE,
-                'last_scan_index': int(last_scan_index.value) if last_scan_index and last_scan_index.value is not None else None
-            }
-            db.close()
-            return jsonify(result)
-
-    # Run Flask app
     app.run(debug=True, host='0.0.0.0', port=5080)
