@@ -39,18 +39,26 @@ def requests_get_with_retry(url, headers=None, cookies=None, max_retries=4, back
     raise last_exc
 
 def get_nse_cookies():
-    baseurl = "https://www.nseindia.com/"
-    headers = {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36',
-        'accept-language': 'en,gu;q=0.9,hi;q=0.8',
-    }
+    """Fetch NSE cookies by visiting the homepage."""
     try:
-        resp = requests_get_with_retry(baseurl, headers=headers, cookies=None, max_retries=3, backoff_factor=0.8, timeout=8)
-        cookies = dict(resp.cookies)
+        # Send a GET request to the NSE homepage
+        response = _SESSION.get("https://www.nseindia.com", timeout=10)
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        # Extract cookies from the response
+        cookies = response.cookies.get_dict()
+
         return cookies
-    except Exception as e:
-        logger.warning(f"Failed to get NSE cookies: {e}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching NSE cookies: {e}")
         return {}
+
+def is_market_open():
+    """Check if the market is open."""
+    now = datetime.now()
+    market_open = datetime.strptime("09:15", "%H:%M").time()
+    market_close = datetime.strptime("15:30", "%H:%M").time()
+    return market_open <= now.time() <= market_close and now.weekday() < 5
 
 def fetch_oi_data(symbol="NIFTY"):
     cookies = get_nse_cookies()
@@ -60,9 +68,12 @@ def fetch_oi_data(symbol="NIFTY"):
         url = f"https://www.nseindia.com/api/option-chain-equities?symbol={symbol}"
 
     headers = {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36',
-        'accept-language': 'en,gu;q=0.9,hi;q=0.8',
-        'referer': 'https://www.nseindia.com/market-data/option-chain'
+        'Host': 'www.nseindia.com',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': 'https://www.nseindia.com/market-data/option-chain'
     }
     resp = requests_get_with_retry(url, headers=headers, cookies=cookies, max_retries=4, backoff_factor=0.8, timeout=10)
     return resp.json()

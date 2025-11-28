@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from database import SessionLocal, Stock, OIData, init_db, get_meta, set_meta, Meta
-from data_fetcher import fetch_oi_data, process_and_save_oi_data, save_option_chain_data, fetch_fno_symbols
-from seed import seed_stocks
+from data_fetcher import fetch_oi_data, process_and_save_oi_data, save_option_chain_data, fetch_fno_symbols, is_market_open
+from seed_from_csv import seed_from_csv
 import threading
 import time
 import random
@@ -156,6 +156,11 @@ def background_scan_loop(interval_seconds=20, batch_size=20):
     while True:
         start = time.time()
         try:
+            if not is_market_open():
+                logger.info("Market is closed. Scanner is sleeping.")
+                time.sleep(60)
+                continue
+
             db = SessionLocal()
             # Read runtime-configurable interval and batch size from meta table if present
             try:
@@ -315,7 +320,7 @@ def admin():
 
 if __name__ == '__main__':
     init_db()
-    seed_stocks()
+    seed_from_csv()
 
     scanner_thread = threading.Thread(target=background_scan_loop, args=(INTERVAL_SECONDS, BATCH_SIZE), daemon=True)
     scanner_thread.start()
